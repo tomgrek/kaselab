@@ -8,7 +8,7 @@ Outputs a tab-separated time report for easy import to spreadsheet software.
 
 ## Requirements
 
-* node 4+
+* node 4+ (0.10+)
 * npm 3+
 
 No database requirements. KaseLab works with a single static file, ~/.kaselab.conf.json. Good
