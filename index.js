@@ -177,8 +177,7 @@ switch(process.argv[2]) {
     timers.map(timer => {
       var startTime = new Date(timer.start);
       var endTime = new Date(timer.stop);
-      console.log(startTime.toDateString()+'\t\t'+startTime.getHours()+':'+startTime.getMinutes()+'\t'+endTime.getHours()+':'+endTime.getMinutes());
-
+      console.log(startTime.toDateString()+'\t\t'+startTime.getHours()+':'+startTime.getMinutes()+'\t'+endTime.getHours()+':'+endTime.getMinutes()+'\t'+timer.description);
     });
     break;
   }
