@@ -170,15 +170,29 @@ switch(process.argv[2]) {
     if (project.clientRef !== '') refString += ' (client ref: '+project.clientRef+")\n";
     if (refString !== '') console.log(refString);
     console.log("---------------------");
-    console.log("Project initiated: "+project.initiated);
+    console.log("Project initiated: "+new Date(project.initiated).toDateString());
     console.log("Total time: " + parseTime(totalTime) + ' over ' + dateSpan + ' days.');
     console.log("---------------------");
     console.log("Date\t\t\tStart\tEnd\tDescription");
     timers.map(timer => {
       var startTime = new Date(timer.start);
       var endTime = new Date(timer.stop);
-      console.log(startTime.toDateString()+'\t\t'+startTime.getHours()+':'+startTime.getMinutes()+'\t'+endTime.getHours()+':'+endTime.getMinutes()+'\t'+timer.description);
+      var startHrs = ''+startTime.getUTCHours();
+      if (startHrs.length < 2) startHrs = '0'+startHrs;
+      var endHrs = ''+endTime.getUTCHours();
+      if (endHrs.length < 2) endHrs = '0'+endHrs;
+      console.log(startTime.toDateString()+'\t\t'+startHrs+':'+startTime.getUTCMinutes()+'\t'+endHrs+':'+endTime.getUTCMinutes()+'\t'+timer.description);
     });
+    break;
+  }
+  case 'help': {
+    console.log("\nKaseLab - Command Line Time Tracking\n---------------------");
+    console.log("kaselab new project [name] - Create new project");
+    console.log("kaselab use [name] - Switch to project (make it the active project)");
+    console.log("kaselab timer start - Start timer on active project");
+    console.log("kaselab timer stop [\"description of work done\"] - Stop active timer");
+    console.log("kaselab report [name] - Show time log for project [name]");
+    console.log("---------------------\nAny broken time can be fixed by directly editing ~/.kaselab.conf.json");
     break;
   }
   default : {
