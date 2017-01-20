@@ -1,159 +1,96 @@
 var fs = require('fs');
-var input = require('readline-sync');
-var moment = require('moment');
-var _ = require('underscore');
-var sprintf = require('sprintf-js').sprintf;
+var path = require('path');
 
-var klFunctions = require('./functions');
-
-var newProjectAction = function(args) {
-  // args are: args[0] - projectName
-  var theProject = {};
-  theProject.name = args[0]; theProject.fullName = args[0]; theProject.inception = new Date();
-  theProject.contributors = [{role:'creator',userId:klFunctions.userId()}];
-  theProject.stakeholders = []; theProject.tasks = []; theProject.assets = []; theProject.incomes = [];
-  theProject.milestones = []; theProject.documents = [];
-  theProject.description = input.question('Project Description [A new project] : ', {defaultInput: 'A new project'});
-  klFunctions.callMethod('newProject', [{project: theProject}], function(err, res) {
-    if (err) {
-      klFunctions.errorAndQuit(err);
-    }
-    console.log('\n'+res.message);
-    klFunctions.cleanUpAndQuit();
-    });
+function configFilePath() {
+  var home = process.env.HOME || process.env.USERPROFILE;
+  var confFilePath = path.join(home, '.kaselab.conf.json');
+  return confFilePath;
 }
+function readConfig() {
+  var configFile = fs.readFileSync(configFilePath());
+  return JSON.parse(configFile);
+};
+function writeConfig(config) {
+  fs.writeFileSync(configFilePath(), JSON.stringify(config, null, '\t'));
+};
+function checkOrCreateConfig() {
+  if (!fs.existsSync(configFilePath())) {
+    var config = {
+      activeProject: null,
+      projects: [],
+      time: [],
+      user: {}
+    };
+    writeConfig(config);
+  }
+};
+function cleanUpAndQuit() {
+  process.exit(0);
+};
+function findOne(collection, key, id) {
+  return collection.filter(function(item) {
+    return item[key] === id;
+  })[0] || null;
+};
+function findAll(collection, key, id) {
+  return collection.filter(function(item) {
+    return item[key] === id;
+  }) || null;
+};
+function getInput(prompt, cb) {
+  const readline = require('readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: prompt + ' ',
+    terminal: false
+  });
+  rl.prompt();
+  rl.on('line', function(line) {
+    rl.close();
+    cb(line);
+  });
+};
+function parseTime(time) {
+  time = new Date(time);
+  return time.getUTCHours() + ' hrs ' + time.getUTCMinutes() + ' mins';
+};
 
-var syncAction = function(args) {
-  console.log('Syncing...');
-  klFunctions.subscribe('projects', [], function() {
-      var theConfig = klFunctions.getConfig();
-      var shorterList = [];
-      _.forEach(klFunctions.collections().projects, function(project) {
-        shorterList.push({id: project._id, name: project.name, fullName: project.fullName, description: project.description});
-      });
-      console.log(sprintf('Active Projects:\n%-25s %-30s\n%-25s %-30s',"Name","Description","-----","-----"));
-      _.forEach(shorterList, function(project) {
-        console.log(sprintf("%-25s %-30s",project.name,project.description));
-      });
-      theConfig.projectList = shorterList;
-      klFunctions.writeConfig(theConfig);
-      process.exit(0);
-    }
-  );
-}
-
+checkOrCreateConfig();
 try {
 
 switch(process.argv[2]) {
-  case 'start' : {
-      if (process.argv[3] === 'background_alerts') {
-        var theProcess = klFunctions.spawnBackgroundAlerts();
-    		if (theProcess) {
-    			console.log("Starting KaseLab background alerts...");
-    			var config = klFunctions.getConfig();
-    			config.alertsProcess = theProcess.pid;
-    			klFunctions.writeConfig(config);
-    			klFunctions.cleanUpAndQuit();
-    		}
-    		else {
-    			console.log("Could not start background alerts.");
-    			klFunctions.cleanUpAndQuit();
-    		}
-      }
-      if (process.argv[3] === 'timer') {
-        var config = klFunctions.getConfig();
-        if (!config.timer)
-          config.timer = [{project:{id:config.activeProjectId, name:config.activeProjectName}, start: new Date()}];
-        else {
-          var openProjectTimer = {};
-          if (!_.every(config.timer, function(entry) { openProjectTimer = entry; return entry.hasOwnProperty('start') && entry.hasOwnProperty('end')})) {
-            klFunctions.errorAndQuit({error:400, reason:'Another timer is still open', details: 'Use kaselab stop timer '+openProjectTimer.project.name+' "[hh:mm YYYY/MM/dd]" first.\n'})
-          }
-          config.timer.push({project:{id:config.activeProjectId, name:config.activeProjectName}, start: new Date()});
-        }
-        console.log("\nStarting KaseLab time tracker for project "+config.activeProjectName+" at "+moment(config.timer[config.timer.length-1].start).format("HH:mm YYYY/MMMM/D")+".\n");
-        klFunctions.writeConfig(config);
-        klFunctions.cleanUpAndQuit();
-      }
-      break;
-    }
-  case 'stop' : {
-      if (process.argv[3] === 'timer') {
-        var config = klFunctions.getConfig();
-        if (process.argv[4]) {
-          if (!process.argv[5] || process.argv[6])
-            klFunctions.errorAndQuit({error:400, reason:'Specify stop time', details:'Usage: kaselab stop timer [project name] "[hh:mm YYYY/MM/dd]" (in quotation marks).'});
-          klFunctions.cleanUpAndQuit();
-        }
-        config.timer[config.timer.length-1].end = new Date();
-        klFunctions.writeConfig(config);
-        var timeDifference = moment(config.timer[config.timer.length-1].end) - moment(config.timer[config.timer.length-1].start);
-        timeDifference = moment.duration(timeDifference);
-        timeDifference = timeDifference.hours() + ':' + timeDifference.minutes();
-        console.log('\nStopped KaseLab time tracker for project '+config.activeProjectName+' at '+moment(config.timer[config.timer.length-1].end).format("HH:mm YYYY/MMMM/D")+', you spent '+timeDifference+'.\n');
-        console.log('Use "kaselab sync" to update the project online.\n')
-        klFunctions.cleanUpAndQuit();
-      }
-      if (process.argv[3] === 'background_alerts') {
-    		var config = klFunctions.getConfig();
-    		if (config.process) {
-    			try {
-    				process.kill(config.alertsProcess, 'SIGTERM');
-    				delete config.alertsProcess;
-    				klFunctions.writeConfig(config);
-    				console.log('Stopping KaseLab background alerts.');
-    			} catch(err) {
-    				console.log('Error stopping the background alerts process.');
-    			}
-    			klFunctions.cleanUpAndQuit();
-    		}
-    		else {
-    			console.log("KaseLab isn't currently showing background alerts.");
-    			klFunctions.cleanUpAndQuit();
-    		}
-    	}
-  }
-  case 'sync' : {
-    klFunctions.connect(syncAction, []);
-    break;
-  }
-  case 'help' : {
-    console.log("KaseLab, communication focused project management.");
-    console.log("Try:\tkaselab new project MyProject\n\tkaselab switch project MyProject\n\tkaselab start timer");
-    console.log('kaselab start background_alerts :\tstart the background alerts process\n\t\t\t\t\t(notifies you of changes to a project you are subscribed to.)');
-    console.log('kaselab stop background_alerts :\tstop the background alerts process.');
-    klFunctions.cleanUpAndQuit();
-    break;
-  }
-  case 'use' : {
-    switch (process.argv[3]) {
-      case 'project' : {
-        var checkLocal = klFunctions.getProjectIdLocally({name:process.argv[4]});
-        if (checkLocal.result) {
-          var theConfig = klFunctions.getConfig();
-          theConfig.activeProjectId = checkLocal.id;
-          theConfig.activeProjectName = checkLocal.projectName;
-          klFunctions.writeConfig(theConfig);
-          console.log(checkLocal.message);
-          klFunctions.cleanUpAndQuit();
-        } else {
-        klFunctions.errorAndQuit({error:400, reason: 'No record of that project', details: checkLocal.message});
-        }
-        break;
-      }
-      default : {
-        throw 'Cannot use '+process.argv[3];
-        break;
-      }
-    }
-    break;
-  }
   case 'new' : {
-    if (process.argv.length < 4) throw "New what?";
+    if (process.argv.length < 4) throw 'New what?\nMaybe you meant "kaselab new project [name]"';
     switch (process.argv[3]) {
       case 'project' : {
-        klFunctions.connect(newProjectAction, [process.argv[4]]);
-        //process.exit(0);
+        if (!process.argv[4]) throw 'You need to specify a project name';
+        var config = readConfig();
+        var newProject = {
+          name: process.argv[4]
+        };
+        config.activeProject = newProject.name;
+        if (findOne(config.projects, 'name', newProject.name)) throw 'That project already exists.';
+        getInput('Any project reference? [no]', function(ref) {
+          newProject.ref = ref;
+          newProject.initiated = new Date();
+          getInput('Any client? [no]', function(client) {
+            newProject.client = client;
+            if (client !== '') {
+              getInput('Does client have its own reference? [no]', function (cliRef) {
+                newProject.clientRef = cliRef;
+                config.projects.push(newProject);
+                writeConfig(config);
+                console.log("Successfully created "+newProject.name+" and set it as the active project");
+              });
+            } else {
+              newProject.clientRef = '';
+              config.projects.push(newProject);
+              writeConfig(config);
+              console.log("Successfully created "+newProject.name+" and set it as the active project");
+            }
+          });
+        });
         break;
       }
       default : {
@@ -163,19 +100,96 @@ switch(process.argv[2]) {
     }
     break;
   }
+  case 'use' : {
+    if (process.argv.length < 4) throw 'Use what?\nMaybe you meant "kaselab use [project name]"';
+    var config = readConfig();
+    if (!findOne(config.projects, 'name', process.argv[3])) throw `That project doesn't exist`;
+    var activeTimer = config.time[config.time.length-1];
+    if (activeTimer && !activeTimer.stop) throw 'You have a timer in progress on '+config.activeProject+', stop it first.\n';
+    config.activeProject = process.argv[3];
+    writeConfig(config);
+    console.log("Successfully set active project to "+process.argv[3]);
+    break;
+  }
+  case 'timer' : {
+    if (process.argv.length < 4) throw 'Start or stop?\nMaybe you meant "kaselab timer start"';
+    var config = readConfig();
+    switch (process.argv[3]) {
+      case 'start': {
+        var activeTimer = config.time[config.time.length-1];
+        if (activeTimer && !activeTimer.stop) throw 'You have a timer in progress on '+config.activeProject+', stop it first.\nIn case of errors, you may need to edit ~/.kaselab.conf.json';
+        var timer = {
+          start: new Date(),
+          project: config.activeProject
+        };
+        console.log('Started timer on '+config.activeProject);
+        config.time.push(timer);
+        writeConfig(config);
+        break;
+      }
+      case 'stop': {
+        var activeTimer = config.time[config.time.length-1];
+        if (activeTimer.project !== config.activeProject) throw 'You are currently working on '+config.activeProject+', but the active timer is for '+activeTimer.project+'.\nYou may need to edit ~/.kaselab.conf.json';
+        if (process.argv.length < 5) {
+          getInput('Description of what you did: [working]', function(desc) {
+            if (!desc || desc === '') desc = "Working";
+            config.time[config.time.length-1] = Object.assign(activeTimer, {stop: new Date(), description: desc});
+            writeConfig(config);
+            console.log('Stopped timer on '+config.activeProject);
+          });
+        } else {
+          config.time[config.time.length-1] = Object.assign(activeTimer, {stop: new Date(), description: process.argv[4]});
+          console.log('Stopped timer on '+config.activeProject);
+          writeConfig(config);
+        }
+        break;
+      }
+      default: {
+        throw 'Start or stop?\nMaybe you meant "kaselab timer start"';
+        break;
+      }
+    }
+    break;
+  }
+  case 'report': {
+    if (process.argv.length < 4) throw 'Report on which project?\nMaybe you meant "kaselab report [project name]"';
+    var config = readConfig();
+    var project = findOne(config.projects, 'name', process.argv[3]);
+    if (!project) throw `That project doesn't exist`;
+    var timers = findAll(config.time, 'project', project.name);
+    var totalTime = timers.reduce((acc, x) => {
+      if (!x.stop) throw 'You have an open timer\nUse kaselab timer stop or edit ~/.kaselab.conf.json';
+      acc += new Date(x.stop) - new Date(x.start);
+      return acc;
+    }, 0);
+    var dateSpan = new Date(timers[timers.length-1].stop).getDate() - new Date(timers[0].start).getDate();
+    console.log("Time report for project "+project.name);
+    var refString = '';
+    if (project.ref !== '') refString += 'Reference: '+project.ref+"\n";
+    if (project.client !== '') refString += 'Client: '+project.client;
+    if (project.clientRef !== '') refString += ' (client ref: '+project.clientRef+")\n";
+    if (refString !== '') console.log(refString);
+    console.log("---------------------");
+    console.log("Project initiated: "+project.initiated);
+    console.log("Total time: " + parseTime(totalTime) + ' over ' + dateSpan + ' days.');
+    console.log("---------------------");
+    console.log("Date\t\t\tStart\tEnd\tDescription");
+    timers.map(timer => {
+      var startTime = new Date(timer.start);
+      var endTime = new Date(timer.stop);
+      console.log(startTime.toDateString()+'\t\t'+startTime.getHours()+':'+startTime.getMinutes()+'\t'+endTime.getHours()+':'+endTime.getMinutes());
+
+    });
+    break;
+  }
   default : {
     console.log("Error processing that command - try 'kaselab help'");
-    klFunctions.cleanUpAndQuit();
+    cleanUpAndQuit();
     break;
   }
 }
 
 } catch(error) {
-  console.log('Error processing that command.\nSpecifically: '+error+'\nYou could try just running ./kaselab with no arguments');
-  klFunctions.cleanUpAndQuit();
+  console.log('Error processing that command.\nSpecifically: '+error+'\n');
+  cleanUpAndQuit();
 }
-
-//setTimeout(function() { messageWatcher.stop(); process.exit(0); }, 45000);
-/*ddpclient.on('message', function (msg) {
-  console.log("ddp message: " + msg);
-});*/
